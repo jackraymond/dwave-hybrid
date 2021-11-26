@@ -878,7 +878,12 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None):
     qpu_shape = qpu_sampler.properties['topology']['shape']
 
     target = nx.Graph()
-    target.add_edges_from(qpu_sampler.edgelist)
+    # 'couplers' and 'qubits' property fields are preferred to
+    # edgelist and nodelist properties. Since the former are
+    # mutable this is convenient for masking on the fly and
+    # related operations; although a safer practice would be
+    # use of a composite.
+    target.add_edges_from(qpu_sampler.properties['couplers'])
 
     if qpu_type == lattice_type:
         # Fully yielded fully utilized native topology problem.
