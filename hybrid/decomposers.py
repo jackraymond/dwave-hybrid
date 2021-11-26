@@ -876,7 +876,7 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None):
     if lattice_type is None:
         lattice_type = qpu_type
     qpu_shape = qpu_sampler.properties['topology']['shape']
-
+    
     target = nx.Graph()
     # 'couplers' and 'qubits' property fields are preferred to
     # edgelist and nodelist properties. Since the former are
