@@ -101,7 +101,27 @@ class TestQPUSamplers(unittest.TestCase):
         sampler = dimod.StructureComposite(
             SimulatedAnnealingSampler(), nodelist=[0], edgelist=[])
 
+        
         workflow = QPUSubproblemExternalEmbeddingSampler(qpu_sampler=sampler)
+
+        # run mock sampling
+        res = workflow.run(init).result()
+
+        # verify mock sampler received custom kwargs
+        self.assertEqual(res.subsamples.first.energy, -1)
+        
+    def test_external_embedding_sampler_srt(self):
+        bqm = dimod.BinaryQuadraticModel.from_ising({'a': 1}, {})
+        init = State.from_subproblem(bqm, embedding={'a': [0]})
+
+        sampler = dimod.StructureComposite(
+            SimulatedAnnealingSampler(), nodelist=[0], edgelist=[])
+
+        # Test srt option, introduced as placeholder
+        # functionality for compatibility with latticeLNLS
+        # reference workflows (special case use of extended
+        # J-range)
+        workflow = QPUSubproblemExternalEmbeddingSampler(qpu_sampler=sampler,logical_srt=True)
 
         # run mock sampling
         res = workflow.run(init).result()
