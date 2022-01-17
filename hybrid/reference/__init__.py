@@ -16,3 +16,4 @@ from hybrid.reference.kerberos import *
 from hybrid.reference.pt import *
 from hybrid.reference.pa import *
 from hybrid.reference.qbsolv import *
+from hybrid.reference.latticeLNLS import *

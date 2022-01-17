@@ -1076,7 +1076,7 @@ class Const(traits.NotValidated, Runnable):
         return state.updated(**self.consts)
 
 
-class Log(traits.NotValidated, Runnable)
+class Log(traits.NotValidated, Runnable):
     """Tracks and logs user-defined data (e.g. state metrics) extracted from
     state by the ``key`` function.
 
