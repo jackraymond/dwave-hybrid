@@ -39,7 +39,7 @@ __all__ = [
     'IdentityDecomposer', 'ComponentDecomposer', 'EnergyImpactDecomposer', 
     'RandomSubproblemDecomposer', 'TilingChimeraDecomposer', 
     'RandomConstraintDecomposer', 'RoofDualityDecomposer',
-    'SublatticeDecomposer', 'make_origin_embeddings',
+    'SublatticeDecomposer', 'make_origin_embeddings', 'make_sublattice_mappings'
 ]
 
 logger = logging.getLogger(__name__)
@@ -432,23 +432,31 @@ class SublatticeDecomposer(traits.ProblemDecomposer, traits.SISO, Runnable):
     """Selects a lattice-structured subproblem.
 
     This decomposer requires the input state to contain fields ``bqm`` and
-    ``origin_embeddings``; only the keys (the variables/nodes) from 
-    ``origin_embeddings`` are used.
-    The decomposer can also use the optional state fields ``problem_dims``,
-    ``exclude_dims``, ``geometric_offset`` and ``origin_embedding_index``.
+    ``origin_embeddings``.
+    Optional argument ``origin_embedding_index`` determines the embedding 
+    applied. When it is absent, the embedding is selected randomly over the 
+    permissable range :code:`len(origin_embeddings)`.
 
-    By default ``geometric_offset`` is assigned uniformly at random on the range
-    given by ``problem_dims``.
-    By default ``origin_embedding_index`` is assigned uniformly at random
-    on the range ``[0,len(state.origin_embeddings))``.
-    The random number generator can be initialized with the class variable
-    ``seed``.
+    There are two branches depending on the additional state arguments:
 
+    (1) Given ``sublattice_mappings``, along with the optional argument 
+    ``sublattice_index``. The index determines the mapping applied,
+    when not provided it is generated uniformly at random over the permissable
+    range :code:`len(sublattice_mappings)`. The mapping is applied to the keys of 
+    ``origin_embedding`` to formulate a subproblem compatible with the subsolver.
+
+    (2) If ``sublattice_mappings`` is None, a ``geometric_offset`` is used.
+    The geometric offset can be generated at random given the optional 
+    arguments ``problem_dims`` and ``exclude_dims``. 
     If ``problem_dims`` is a state field, geometrically offset variables are
     wrapped around boundaries according to assumed periodic boundary condition.
     This is a required field when the ``geometric_offset`` is not specified.
     Note that, the origin embedding must specify a lattice smaller than the
     target lattice.
+    The keys in origin_embedding are assumed to take a geometric form, 
+    and a displacement along each permissible dimension is considered assuming 
+    periodic boundary conditions.
+    
 
     Args:
         seed (int, default=None):
@@ -479,45 +487,51 @@ class SublatticeDecomposer(traits.ProblemDecomposer, traits.SISO, Runnable):
 
     def next(self, state, **runopts):
         bqm = state.problem
-
-        if 'geometric_offset' not in state:
-            # Select uniformly at random amongst available geometric offsets
-            geometric_offset = [self.random.randint(dim) for dim in state.problem_dims]
-            # Do not offset excluded dimensions
-            if 'exclude_dims' in state:
-                for dim in state.exclude_dims:
-                    if dim < 0 or dim >= len(geometric_offset):
-                        raise ValueError('exclude_dimension state variable '
-                                         'indexes an invalid dimension')
-                    geometric_offset[dim] = 0
-        else:
-            if len(state.problem_dims) != len(state.geometric_offset):
-                raise ValueError('problem_dimension and geometric_offset state '
-                                 'variables are of incompatible length')
-            for idx, offset in enumerate(state.geometric_offset):
-                if not (offset < state.problem_dims[idx] and 0 <= offset):
-                    raise ValueError(
-                        'geometric_offset state variable values are outside the '
-                        f'lattice allowed ranges [0, problem_dimension[idx]), idx={idx}')
-            geometric_offset = state.geometric_offset
-
-        def key_transform(initial_coordinates):
-            # The geometric keys are offset, with wrapping about periodic
-            # boundary conditions.
-            final_coordinates = list(initial_coordinates)
-            if 'problem_dims' in state:
-                for idx, val in enumerate(geometric_offset):
-                    final_coordinates[idx] += val
-                    final_coordinates[idx] %= state.problem_dims[idx]
+        if 'variable_mappings' not in state:
+            if 'geometric_offset' not in state:
+                if 'problem_dims' not in state:
+                    raise ValueError('variable_mappings, geometric_offset or problem_dims '
+                                     'must be specified as state variables')
+                # Select uniformly at random amongst available geometric offsets
+                geometric_offset = [self.random.randint(dim) for dim in state.problem_dims]
+                # Do not offset excluded dimensions
+                if 'exclude_dims' in state:
+                    for dim in state.exclude_dims:
+                        if dim < 0 or dim >= len(geometric_offset):
+                            raise ValueError('exclude_dimension state variable '
+                                             'indexes an invalid dimension')
+                        geometric_offset[dim] = 0
             else:
-                for idx, val in enumerate(geometric_offset):
-                    final_coordinates[idx] += val
-            return tuple(final_coordinates)
-
-        # For now we explicitly encode different automorphism as different
-        # origin_embeddings, but is would be natural to allow symmetry
-        # operations (automorphisms) with respect to some fixed embedding
-        # and lattice class.
+                if len(state.problem_dims) != len(state.geometric_offset):
+                    raise ValueError('problem_dimension and geometric_offset state '
+                                     'variables are of incompatible length')
+                for idx, offset in enumerate(state.geometric_offset):
+                    if not (offset < state.problem_dims[idx] and 0 <= offset):
+                        raise ValueError(
+                            'geometric_offset state variable values are outside the '
+                            f'lattice allowed ranges [0, problem_dimension[idx]), idx={idx}')
+                geometric_offset = state.geometric_offset
+            
+            if 'problem_dims' in state:
+                # Periodic wrapping of displaced coordinates
+                def key_transform(initial_coordinates):
+                    return tuple([(val + initial_coordinates[idx])%state.problem_dims[idx] for idx, val in enumerate(geometric_offset)])
+            else:
+                # Simple displacement
+                def key_transform(initial_coordinates):
+                    return tuple([(val + initial_coordinates[idx]) for idx, val in enumerate(geometric_offset)])
+        else:
+            if 'sublattice_index' in state:
+                if (state.sublattice_index > len(state.sublattice_mappings) or
+                    state.sublattice_index < -len(state.sublattice_mappings)):
+                    raise ValueError('sublattice_index specified a mapping '
+                                     'beyond the generated range')
+                sublattice_index = state.sublattice_index
+            else:
+                sublattice_index = self.random.randint(
+                    len(state.variable_mappings))
+            key_transform = state.sublattice_mappings[sublattice_index]
+            
         if 'origin_embedding_index' not in state:
             #Select uniformly at random amongst available embeddings:
             origin_embedding_index = self.random.randint(
@@ -829,9 +843,130 @@ def _make_cubic_lattice(dimensions):
     return cubic_lattice_graph
 
 
+def make_sublattice_mappings(source_topology, target_topology, *, is_periodic = False, coordinates=None):
+    """Returns a list of subgraph mappings.
+    
+    Mappings from the source_graph to displaced locations over target graphs
+    for common topology pairings are enumerated as a list.
+    A simple geometric scheme is assumed if the topology is presented in the form
+    of tuples. Chimera, Pegasus and Zephyr topology specifications allow for 
+    special handling of sublattice mappings via dwave_networkx functionality.
+    The target graph can either be fully periodic (allowing for boundary spanning 
+    displacements) or not. 
+
+    """
+    if type(source_topology) is tuple:
+        # Interpret as geometric bounds, e.g. cubic, and populate
+        # functions with valid translational displacements
+        # Enumerate all possible displacements from source onto (larger) target
+        # Previous code created such mappings on the fly, with displacement only
+        # in subset of orientations
+        num_dimensions = len(source_topology)
+        if (type(target_topology) is not tuple) \
+           or num_dimensions != len(target_topology):
+            raise ValueError('Incompatible topology tuples.')
+        
+        if any([source_topology[i] >= target_topology[i]
+                for i in range(num_dimensions)]):
+            raise ValueError('Sublattice too small.')
+            
+        if is_periodic:
+            coord_range = target_topology
+        else:
+            # Remain inside the bounday - no boundary spanning regions
+            coord_range = [target_topology[i] - source_topology[i] + 1 for i in range(num_dimensions)]
+
+        def shift_function(geometric_offset):
+            def _(coord):
+                return tuple([(v+geometric_offset[idx])%target_topology[idx] for idx,v in enumerate(coord)])
+            return _
+        mappings = [shift_function(geometric_offset) for geometric_offset in product(*[range(c) for c in coord_range])]
+    else:
+        # Assume dwave_networkx style lattice specification (chimera, pegasus or zephyr)
+        if type(source_topology) is not dict or type(target_topology) is not dict: 
+            raise(ValueError,"source_topolgy and target_topology must match,"
+                  "either a pair of tuples, or a pair of dictionaries with"
+                  "keys 'shape' and 'type'")
+        
+        # The source graph is assumed to take the form dnx.chimera_graph,
+        # dnx.pegasus_graph or dnx.zephyr_graph.
+        if source_topology['type'] == 'chimera':
+            source = dnx.chimera_graph(*source_topology['shape'], coordinates=coordinates)
+        elif source_topology['type'] == 'pegasus':
+            if coordinates == 'nice':
+                source = dnx.pegasus_graph(*source_topology['shape'], nice_coordinates=True)
+            else:
+                source = dnx.pegasus_graph(*source_topology['shape'], coordinates=coordinates)
+        elif source_topology['type'] == 'zephyr':
+            source = dnx.zephyr_graph(*source_topology['shape'], coordinates=coordinates)
+        else:
+            raise ValueError('Unsupported topology')
+        
+        # Sublattice mappings routines enable handling of the following types:
+        # 
+        # dnx.pegasus_graph or dnx.zephyr_graph We can generate
+        # mappings based on this graphs, and translate to torus
+        # appropriate mappings after the fact.
+        tshape = target_topology['shape']
+        if target_topology['type'] == 'chimera' or target_topology['type'] == 'chimera_torus':
+            target = dnx.chimera_graph(*tshape, coordinates=coordinates)
+        elif target_topology['type'] == 'pegasus' or target_topology['type'] == 'pegasus_torus':
+            if coordinates == 'nice':
+                target = dnx.pegasus_graph(*tshape, nice_coordinates=True)
+            else:
+                target = dnx.pegasus_graph(*tshape, coordinates=coordinates)
+        elif target_topology['type'] == 'zephyr':
+            target = dnx.zephyr_graph(*tshape, coordinates=coordinates)
+        else:
+            raise ValueError("Unsupported target_topology['type']")
+        
+        if target_topology['type'] in {'chimera_torus','pegasus_torus','zephyr_torus'}:
+            if (coordinates is not True) and (coordinates != 'nice' or target_topology['type'] != 'pegasus_torus'):
+                raise ValueError("For the torus application, only coordinates = True "
+                                 "and coordinates = 'nice' are supported.")
+            
+            # Explicitely enumerate valid mappings:
+            # dnx.chimera_sublattice_mappings for dnx.chimera_torus
+            # dnx.pegasus_sublattice_mappings for dnx.pegasus_torus
+            # dnx.zephyr_sublattice_mappings for dnx.zephyr_torus
+            # subject to non-defaulted offset_lists, and modulo boundary condition.
+            
+            if target_topology['type'] == 'chimera_torus':
+                # (i, j, u, k)
+                coordinated_shape = [tshape[0],tshape[1],2,tshape[3]]
+                offset_list = product(range(tshape[0]),range(tshape[2]))
+                sublattice_generator = dnx.chimera_sublattice_mappings(source, target, offset_list)
+            elif target_topology['type'] == 'pegasus_torus':
+                if coordinates == 'nice': # (t, y, x, u, k)                   
+                    coordinated_shape = [3,tshape[0]-1,tshape[0]-1,2,4]
+                else: # (u, w, k, z)
+                    coordinated_shape = [2,tshape[0]-1,tshape[0]-1,12]
+                offset_list = product(range(3),range(tshape[0]),range(tshape[0]))
+                sublattice_generator = dnx.pegasus_sublattice_mappings(source, target, offset_list)
+            elif target_topology['type'] == 'zephyr_torus':
+                # (u , w, k, j, z)
+                coordinated_shape = [2, 2*tshape[0], tshape[1], 2, tshape[0]]
+                offset_list = product(2*tshape[0],2*tshape[0])
+                sublattice_generator = dnx.zephyr_sublattice_mappings(source, target, offset_list)
+            
+            wrap_around = lambda x : tuple([x[i]%s for i,s in enumerate(coordinated_shape)])
+            mappings = [lambda x : wrap_around(f(x)) for f in sublattice_generator]
+        else:
+            # The target graph is assumed to take the form dnx.chimera_graph,
+            # dnx.pegasus_graph or dnx.zephyr_graph.
+            # Use automated boundary handling in subroutines
+             if target_topology['type'] == 'chimera':
+                 mappings = [f for f in dnx.chimera_sublattice_mappings(source, target)]
+             elif target_topology['type'] == 'pegasus':
+                 mappings = [f for f in dnx.pegasus_sublattice_mappings(source, target)]
+             elif target_topology['type'] == 'zephyr':
+                 mappings = [f for f in dnx.zephyr_sublattice_mappings(source, target)]
+    return mappings
+        
 def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
                            problem_dims=None, reject_small_problems=True,
-                           allow_unyielded_edges=False):
+                           allow_unyielded_edges=False,
+                           enumerate_offsets=False):
     """Creates optimal embeddings for a lattice.
 
     An embedding is a dictionary specifying the mapping from each lattice
@@ -863,6 +998,12 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
                     Embeddings are chain length one (minimal and native).
                     If ``qpu_sampler`` topology type is 'chimera', maximum
                     scale chimera subgraphs are embedded using the chimera
+                    vector labeling scheme for variables.
+
+                * "zephyr"
+                    Embeddings are chain length one (minimal and native).
+                    If ``qpu_sampler`` topology type is 'pegasus', maximum
+                    scale subgraphs are embedded using the ``nice_coordinates``
                     vector labeling scheme for variables.
 
         problem_dims (tuple of ints, optional):
@@ -901,7 +1042,7 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
             treated as unyielded. If the argument is set to False then yielded
             chains of incomplete connectivity are returned as part of the
             embedding.
-
+        
     Returns:
         A list of embeddings. Each embedding is a dictionary, mapping
         geometric problem keys to sets of qubits (chains) compatible with
@@ -930,7 +1071,7 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
         lattice-structured problems <https://arxiv.org/abs/2202.03044>`_
     """
     if qpu_sampler is None:
-        if lattice_type == 'pegasus' or lattice_type == 'chimera':
+        if lattice_type == 'pegasus' or lattice_type == 'chimera' or lattice_type == 'zephyr':
             qpu_sampler = DWaveSampler(solver={'topology__type': lattice_type})
         else:
             qpu_sampler = DWaveSampler()
@@ -971,7 +1112,12 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
             proposed_source = dnx.chimera_graph(qpu_shape[0],
                                                 qpu_shape[1],
                                                 qpu_shape[2])
-            lin_to_vec = dnx.chimera_coordinates(qpu_shape[0]).linear_to_chimera
+            lin_to_vec = dnx.chimera_coordinates(qpu_shape[0],qpu_shape[1],qpu_shape[2]).linear_to_chimera
+        elif lattice_type == 'zephyr':
+            proposed_source = dnx.zephyr_graph(qpu_shape[0],
+                                               qpu_shape[1])
+            lin_to_vec = dnx.zephyr_coordinates(qpu_shape[0],qpu_shape[1]).linear_to_zephyr
+            #NB, Zephyr maps to C8-indexed unit cell in 4 different ways, according to 
         else:
             raise ValueError(
                 f'Unsupported native processor topology {qpu_type}. '
@@ -1081,6 +1227,8 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
         origin_embeddings.append({(key[1], key[0], 1-key[2], key[3]): value
                                   for key,value in origin_embedding.items()})
         problem_dim_spec = 4
+    elif lattice_type == 'zephyr':
+        pass
     else:
         raise ValueError('Unsupported lattice_type')
     if problem_dims is not None:

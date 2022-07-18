@@ -25,7 +25,8 @@ import dwave_networkx as dnx
 from hybrid.decomposers import (
     EnergyImpactDecomposer, RandomSubproblemDecomposer,
     RandomConstraintDecomposer, RoofDualityDecomposer, ComponentDecomposer,
-    SublatticeDecomposer, make_origin_embeddings, _make_cubic_lattice)
+    SublatticeDecomposer, make_origin_embeddings, make_sublattice_mappings,
+    _make_cubic_lattice)
 from hybrid.core import State
 from hybrid.utils import min_sample, random_sample
 from hybrid.exceptions import EndOfStream
@@ -838,3 +839,62 @@ class TestMakeOriginEmbeddings(unittest.TestCase):
                     from numpy import prod
                     self.assertTrue(len(orig_emb)==prod(cs))
                     self.assertFalse(any(any(key[idx] >= bound for idx,bound in enumerate(cs)) for key in orig_emb))
+                    
+class TestMakeSublatticeMappings(unittest.TestCase):
+    
+    def test_geometric_displacements(self):
+        square_sub = (2,2)
+        square_full = (4,5)
+        maps = make_sublattice_mappings(square_sub, square_full, is_periodic=True)
+
+        # All possible displacements around torus:
+        self.assertEqual(len(maps), square_full[0]*square_full[1])
+        base_coordinate = (1,1)
+
+        # Untranslated, or translated to final position.
+        self.assertEqual(maps[0](base_coordinate), base_coordinate)
+        self.assertEqual(maps[-1](base_coordinate), (0,0)) 
+
+        # Open boundary conditions, all possible displacements not spanning boundary
+        maps = make_sublattice_mappings(square_sub, square_full, is_periodic=False)
+        self.assertEqual(len(maps), (square_full[0] - square_sub[0] + 1)
+                         *(square_full[1]-square_sub[0]+1))
+        
+        with self.assertRaises(ValueError):
+            # Too small
+            square_sub = (2,2)
+            square_full = (1,1)
+            maps = make_sublattice_mappings(square_sub, square_full, is_periodic=True)
+            
+        with self.assertRaises(ValueError):
+            # Mishapen
+            square_sub = (2,2,3)
+            square_full = (3,3)
+            maps = make_sublattice_mappings(square_sub, square_full, is_periodic=True)
+            
+    def test_dnx_lattices(self):
+        chimera_topology = {'type' : 'chimera', 'shape' : [3,2,2], 'num_vector_dims' : 4, 'tshape' : [4,3,2]}
+        pegasus_topology = {'type' : 'pegasus', 'shape' : [3], 'num_vector_dims' : 4, 'tshape' : [4]}
+        zephyr_topology = {'type' : 'zephyr', 'shape' : [3,2], 'num_vector_dims' : 5, 'tshape' : [4,2]}
+
+        # Check standard open boundary condition mappings same graph class
+        for top in chimera_topology, pegasus_topology, zephyr_topology:
+            top_full = top.copy()
+            top_full['shape'] = top_full['tshape']
+            maps = make_sublattice_mappings(top, top_full) 
+            self.assertGreater(len(maps),1)  # Multiple valid displacements
+            #Maps int as expected:
+            root = 0
+            self.assertEqual(maps[0](root),root) # First mapping is always identity
+            maps = make_sublattice_mappings(top, top_full, coordinates=True)
+            #Maps vector as expected:
+            root = tuple([0]*top['num_vector_dims'])
+            self.assertEqual(maps[0](root),root)   
+            
+            if top['type'] == 'pegasus':
+                maps = make_sublattice_mappings(top, top_full, coordinates='nice')
+                #Maps nice_coordinate as expected:
+                root = tuple([0]*5)
+                self.assertEqual(maps[0](root),root)    
+        
+        # Check torus, matched class

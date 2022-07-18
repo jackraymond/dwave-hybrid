@@ -205,9 +205,11 @@ class LatticeLNLSSampler(dimod.Sampler):
         #Certain parameters might be initialized in principle and
         #shared amongst many sampling processes.
         self.parameters = {
-            'origin_embeddings': None
+            'origin_embeddings': None,
+            'sublattice_mappings': None
         }
         self.properties = {}
+
 
     def sample(self, topology, bqm, problem_dims, exclude_dims=None,
                reject_small_problems=True, qpu_sampler=None,
@@ -228,7 +230,7 @@ class LatticeLNLSSampler(dimod.Sampler):
             num_reads (int):
                 Number of reads. Each sample is the result of a single run of
                 the hybrid algorithm.
-
+               
             problem_dims (tuple of ints):
                 Lattice dimensions (e.g. cubic case (18,18,18)).
 
@@ -247,6 +249,25 @@ class LatticeLNLSSampler(dimod.Sampler):
                 If the subsolver is bigger than the target problem, raise an
                 error by default (True), otherwise quietly shrink the embedding
                 to be no larger than the target problem.
+
+            topology_target (dict):
+                A dictionary with fields 'type', 'shape' and 'coordinates', to be
+                used in conjunction with ``hybrid.sublattice_mappings``. 
+                Permissable values for the topology type are 
+                'chimera', 'pegasus', 'zephyr', 'chimera_torus', 'pegasus_torus' or 
+                'zephyr_torus'. Permissable values for coordinates are True, False
+                and 'nice' (for pegasus and pegasus_torus only). shape is a 
+                lattice_class specific list [m,n,t] (chimera,chimera_torus), 
+                [m] (pegasus,pegasus_torus) or [m,t] (zephyr,zephyr_torus). The 
+                shape and coordinate values must be consistent with the keying of the
+                bqm variables: i.e. the bqm should be derived from a graph
+                of the same type, shape and coordinate scheme.
+                dwave_networkx sublattice libraries are used for generating the set 
+                of mappings. Only a limited subset of mappings are supported, 
+                depending on the ``qpu_sampler`` employed. These mapping are not 
+                necessarily the most efficient.
+                `problem_dims` in combination with `exclude_dims` can be used as
+                 for an alternative mapping specification.
 
             additional workflow arguments:
                 per :class:`~hybrid.reference.lattice_lnls.LatticeLNLS`.
@@ -276,28 +297,37 @@ class LatticeLNLSSampler(dimod.Sampler):
         self.origin_embeddings = hybrid.make_origin_embeddings(
             qpu_sampler, topology, problem_dims=problem_dims,
             reject_small_problems=reject_small_problems)
-
+        if topology_target is not None:
+            self.sublattice_mappings = make_sublattice_mappings(
+                qpu.properties['topology'],
+                topology_target,
+                coordinates = topology_target['coordinates']
+            )
+            
         if callable(init_sample):
             init_state_gen = lambda: hybrid.State.from_sample(
                 init_sample(),
                 bqm,
                 problem_dims=problem_dims,
                 exclude_dims=exclude_dims,
-                origin_embeddings=self.origin_embeddings)
+                origin_embeddings=self.origin_embeddings,
+                sublattice_mappings=self.sublattice_mappings)
         elif init_sample is None:
             init_state_gen = lambda: hybrid.State.from_sample(
                 hybrid.random_sample(bqm),
                 bqm,
                 problem_dims=problem_dims,
                 exclude_dims=exclude_dims,
-                origin_embeddings=self.origin_embeddings)
+                origin_embeddings=self.origin_embeddings,
+                sublattice_mappings=self.sublattice_mappings)
         elif isinstance(init_sample, dimod.SampleSet):
             init_state_gen = lambda: hybrid.State.from_sample(
                 init_sample,
                 bqm,
                 problem_dims=problem_dims,
                 exclude_dims=exclude_dims,
-                origin_embeddings=self.origin_embeddings)
+                origin_embeddings=self.origin_embeddings,
+                sublattice_mappings=self.sublattice_mappings)
         else:
             raise TypeError("'init_sample' should be a SampleSet or a SampleSet generator")
 
