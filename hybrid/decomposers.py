@@ -843,7 +843,7 @@ def _make_cubic_lattice(dimensions):
     return cubic_lattice_graph
 
 
-def make_sublattice_mappings(source_topology, target_topology, *, is_periodic = False, coordinates=None):
+def make_sublattice_mappings(source_topology, target_topology, *, is_periodic = False, coordinates=True):
     """Returns a list of subgraph mappings.
     
     Mappings from the source_graph to displaced locations over target graphs
@@ -913,9 +913,10 @@ def make_sublattice_mappings(source_topology, target_topology, *, is_periodic = 
         elif target_topology['type'] == 'pegasus' or target_topology['type'] == 'pegasus_torus':
             if coordinates == 'nice':
                 target = dnx.pegasus_graph(*tshape, nice_coordinates=True)
+                
             else:
                 target = dnx.pegasus_graph(*tshape, coordinates=coordinates)
-        elif target_topology['type'] == 'zephyr':
+        elif target_topology['type'] == 'zephyr' or target_topology['type'] == 'zephyr_torus':
             target = dnx.zephyr_graph(*tshape, coordinates=coordinates)
         else:
             raise ValueError("Unsupported target_topology['type']")
@@ -933,24 +934,38 @@ def make_sublattice_mappings(source_topology, target_topology, *, is_periodic = 
             
             if target_topology['type'] == 'chimera_torus':
                 # (i, j, u, k)
-                coordinated_shape = [tshape[0],tshape[1],2,tshape[3]]
-                offset_list = product(range(tshape[0]),range(tshape[2]))
-                sublattice_generator = dnx.chimera_sublattice_mappings(source, target, offset_list)
+                coordinated_shape = [tshape[0],tshape[1],2,tshape[2]]
+                offset_list = product(range(tshape[0]),range(tshape[1]))
+                sublattice_generator = dnx.chimera_sublattice_mappings(source=source,
+                                                                       target=target,
+                                                                       offset_list=offset_list)
             elif target_topology['type'] == 'pegasus_torus':
                 if coordinates == 'nice': # (t, y, x, u, k)                   
                     coordinated_shape = [3,tshape[0]-1,tshape[0]-1,2,4]
                 else: # (u, w, k, z)
-                    coordinated_shape = [2,tshape[0]-1,tshape[0]-1,12]
-                offset_list = product(range(3),range(tshape[0]),range(tshape[0]))
-                sublattice_generator = dnx.pegasus_sublattice_mappings(source, target, offset_list)
+                    coordinated_shape = [2,tshape[0]-1,12,tshape[0]-1]
+                offset_list = product(range(3),range(tshape[0]-1),range(tshape[0]-1))
+                sublattice_generator = dnx.pegasus_sublattice_mappings(source=source,
+                                                                       target=target,
+                                                                       offset_list=offset_list)
             elif target_topology['type'] == 'zephyr_torus':
-                # (u , w, k, j, z)
+                # (u, w, k, j, z)
                 coordinated_shape = [2, 2*tshape[0], tshape[1], 2, tshape[0]]
-                offset_list = product(2*tshape[0],2*tshape[0])
-                sublattice_generator = dnx.zephyr_sublattice_mappings(source, target, offset_list)
+                offset_list = product(range(2*tshape[0]), range(2*tshape[0]))
+                sublattice_generator = dnx.zephyr_sublattice_mappings(source=source,
+                                                                      target=target,
+                                                                      offset_list=offset_list)
+            sublattice_generator = list(sublattice_generator)
+            def boundary_wrapped_map(f):
+                def _(x):
+                    y = f(x)
+                    return tuple([y[i]%s for i,s in enumerate(coordinated_shape)])
+                return _
+            #tup_test=tuple([0]*len(coordinated_shape))
+            mappings = [boundary_wrapped_map(f) for f in sublattice_generator]
+            #print(tup_test,[map(tup_test) for map in mappings])
+            #print(tup_test,[map(tup_test) for map in sublattice_generator])
             
-            wrap_around = lambda x : tuple([x[i]%s for i,s in enumerate(coordinated_shape)])
-            mappings = [lambda x : wrap_around(f(x)) for f in sublattice_generator]
         else:
             # The target graph is assumed to take the form dnx.chimera_graph,
             # dnx.pegasus_graph or dnx.zephyr_graph.
