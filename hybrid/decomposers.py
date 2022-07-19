@@ -823,26 +823,32 @@ def _yield_limited_origin_embedding(origin_embedding, proposed_source, target):
     return origin_embedding
 
 
-def _make_cubic_lattice(dimensions):
+def _make_cubic_lattice(dimensions, node_list=None, edge_list=None):
     """Returns an open boundary cubic lattice graph as function of lattice
     dimensions. Helper function for ``make_origin_embeddings``.
     """
     cubic_lattice_graph = nx.Graph()
-    cubic_lattice_graph.add_edges_from([((x, y, z), (x+1, y, z))
-                                        for x in range(dimensions[0]-1)
-                                        for y in range(dimensions[1])
-                                        for z in range(dimensions[2])
-                                        ])
-    cubic_lattice_graph.add_edges_from([((x, y, z), (x, y+1, z))
-                                        for x in range(dimensions[0])
-                                        for y in range(dimensions[1]-1)
-                                        for z in range(dimensions[2])
-                                        ])
-    cubic_lattice_graph.add_edges_from([((x, y, z), (x, y, z+1))
-                                        for x in range(dimensions[0])
-                                        for y in range(dimensions[1])
-                                        for z in range(dimensions[2]-1)
-                                        ])
+    if edge_list is None:
+        cubic_lattice_graph.add_edges_from([((x, y, z), (x+1, y, z))
+                                            for x in range(dimensions[0]-1)
+                                            for y in range(dimensions[1])
+                                            for z in range(dimensions[2])
+        ])
+        cubic_lattice_graph.add_edges_from([((x, y, z), (x, y+1, z))
+                                            for x in range(dimensions[0])
+                                            for y in range(dimensions[1]-1)
+                                            for z in range(dimensions[2])
+        ])
+        cubic_lattice_graph.add_edges_from([((x, y, z), (x, y, z+1))
+                                            for x in range(dimensions[0])
+                                            for y in range(dimensions[1])
+                                            for z in range(dimensions[2]-1)
+        ])
+        if node_list is not None:
+            cubic_lattice_graph.remove_nodes_from(set(cubic_lattice_graph)-set(node_list))
+    else:
+        cubic_lattice_graph.add_edges_from(edge_list)
+    
     return cubic_lattice_graph
 
 
@@ -1224,14 +1230,14 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
                                 if target.has_edge(vert_q(x,y,z),
                                                    horiz_q(x,y,z))
                                 }
-            if len(origin_embedding) != len(set([origin_embedding[key] for key in origin_embedding])):
-                print('duplicated edges')
-                raise ValueError('Duplicated edges')
-            if 2*len(origin_embedding) != len(set(sum([origin_embedding[key] for key in origin_embedding],()))):
-                print(2*len(origin_embedding),len(set(sum([origin_embedding[key] for key in origin_embedding],()))))
-                raise ValueError('Duplicated vars')
-            #Check is valid embedding:
-            proposed_source = _make_cubic_lattice(dimensions)
+            #if len(origin_embedding) != len(set([origin_embedding[key] for key in origin_embedding])):
+            #    print('duplicated edges')
+            #    raise ValueError('Duplicated edges')
+            #if 2*len(origin_embedding) != len(set(sum([origin_embedding[key] for key in origin_embedding],()))):
+            #    print(2*len(origin_embedding),len(set(sum([origin_embedding[key] for key in origin_embedding],()))))
+            #    raise ValueError('Duplicated vars')
+            #Check is valid embedding (full yield only):
+            proposed_source = _make_cubic_lattice(dimensions, node_list = [key for key in origin_embedding])
             verify_embedding(origin_embedding,proposed_source,target)
             
         else:
