@@ -885,13 +885,29 @@ class TestMakeSublatticeMappings(unittest.TestCase):
         # Check mappings of the origin variable, and a near boundary variable (compatible torus, and regular graphs)
         chimera_topology = {'type' : 'chimera', 'shape' : [3,2,3], 'num_vector_dims' : 4, 'tshape' : [4,3,3], 'test_source_coord' : (2,1,1,2)}
         pegasus_topology = {'type' : 'pegasus', 'shape' : [3], 'num_vector_dims' : 4, 'tshape' : [4], 'test_source_coord' : (1, 1, 11, 1)}
-        zephyr_topology = {'type' : 'zephyr', 'shape' : [3,2], 'num_vector_dims' : 5, 'tshape' : [4,2], 'test_source_coord' : (1, 7, 1, 1, 2)}
+        zephyr_topology = {'type' : 'zephyr', 'shape' : [3,2], 'num_vector_dims' : 5, 'tshape' : [4,2], 'test_source_coord' : (1, 5, 1, 1, 2)}
 
         # Check standard open boundary condition mappings same graph class
-        for top in chimera_topology, zephyr_topology, pegasus_topology:
-            for is_target_torus in [False,True]:
+        for is_target_torus in [False,True]:
+            for top in chimera_topology, zephyr_topology, pegasus_topology:
                 top_full = top.copy()
                 top_full['shape'] = top['tshape']
+                if is_target_torus:
+                    if top['type'] == 'chimera':
+                        target = dnx.chimera_torus(*top_full['shape'])
+                    elif top['type'] == 'pegasus':
+                        target = dnx.pegasus_torus(*top_full['shape'])
+                    elif top['type'] == 'zephyr':
+                        target = dnx.zephyr_torus(*top_full['shape'])
+                else:
+                    if top['type'] == 'chimera':
+                        target = dnx.chimera_graph(*top_full['shape'], coordinates=True)
+                    elif top['type'] == 'pegasus':
+                        target = dnx.pegasus_graph(*top_full['shape'], coordinates=True, fabric_only=False)
+                    elif top['type'] == 'zephyr':
+                        target = dnx.zephyr_graph(*top_full['shape'], coordinates=True)
+
+                    
                 if is_target_torus:
                     top_full['type'] = top_full['type'] + '_torus'
                 else:
@@ -903,7 +919,7 @@ class TestMakeSublatticeMappings(unittest.TestCase):
                     mapped_values = [maps[i](root) for i in range(len(maps))]
                     self.assertEqual(mapped_values[0], root) # First mapping is always identity
                     self.assertEqual(len(mapped_values), len(set(mapped_values))) # All values should be unique
-                 
+                    
                 # nice_coordinates
                 if top['type'] == 'pegasus':
                     maps = make_sublattice_mappings(top, top_full, coordinates='nice')
@@ -920,11 +936,8 @@ class TestMakeSublatticeMappings(unittest.TestCase):
                     mapped_values = [maps[i](root) for i in range(len(maps))]
                     self.assertEqual(mapped_values[0], root) # First mapping is always identity
                     self.assertEqual(len(mapped_values), len(set(mapped_values))) # All values should be unique
-
-        # Probably not very powerful for LNLS method, but interesting technicality:
-        # Sublattices do not cover interactions between the 3 chimera sublattices,
-        # hence will be slow to solve problems with strong interactions spanning
-        # the 3 sublattices.
+                    self.assertTrue(all([target.has_node(node) for node in mapped_values])) # node in graph
+        
         # Check chimera sub (2,2,4) into larger pegasus nice [4] :
         for coordinates in [True,'nice']:
             for target_type in {'pegasus', 'pegasus_torus'}:

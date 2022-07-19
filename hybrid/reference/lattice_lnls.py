@@ -259,8 +259,8 @@ class LatticeLNLSSampler(dimod.Sampler):
                 'chimera', 'pegasus', 'zephyr', 'chimera_torus', 'pegasus_torus' or 
                 'zephyr_torus'. Permissable values for coordinates are True, False
                 and 'nice' (for pegasus and pegasus_torus only). shape is a 
-                lattice_class specific list [m,n,t] (chimera,chimera_torus), 
-                [m] (pegasus,pegasus_torus) or [m,t] (zephyr,zephyr_torus). The 
+                lattice_class specific list [m,n,t] (chimera or chimera_torus), 
+                [m] (pegasus or pegasus_torus) or [m,t] (zephyr or zephyr_torus). The 
                 shape and coordinate values must be consistent with the keying of the
                 bqm variables: i.e. the bqm should be derived from a graph
                 of the same type, shape and coordinate scheme.
@@ -288,24 +288,28 @@ class LatticeLNLSSampler(dimod.Sampler):
         if qpu_sampler is None:
             qpu_sampler = DWaveSampler()
 
-        if exclude_dims is None:
-            if topology == 'chimera':
-                exclude_dims = [2,3]
-            elif topology == 'pegasus':
-                exclude_dims = [0,3,4]
-            else:
-                exclude_dims = []
-                #Recreate on each call, no reuse:
+        
         self.origin_embeddings = hybrid.make_origin_embeddings(
             qpu_sampler, topology, problem_dims=problem_dims,
             reject_small_problems=reject_small_problems)
         if topology_target is not None:
-            self.sublattice_mappings = make_sublattice_mappings(
-                qpu.properties['topology'],
+            print('sublattice_mapping methodology')
+            self.sublattice_mappings = hybrid.make_sublattice_mappings(
+                qpu_sampler.properties['topology'],
                 topology_target,
                 coordinates = topology_target['coordinates']
             )
-            
+        else:
+            if topology == 'zephyr':
+                raise ValueError('No geometric-based scheme for zephyr available')
+            if exclude_dims is None:
+                if topology == 'chimera':
+                    exclude_dims = [2,3]
+                elif topology == 'pegasus':
+                    exclude_dims = [0,3,4]
+                else:
+                    #Assume simple geometric:
+                    exclude_dims = []
         if callable(init_sample):
             init_state_gen = lambda: hybrid.State.from_sample(
                 init_sample(),

@@ -489,15 +489,16 @@ class SublatticeDecomposer(traits.ProblemDecomposer, traits.SISO, Runnable):
 
     def next(self, state, **runopts):
         bqm = state.problem
-        if 'variable_mappings' not in state:
-            if 'geometric_offset' not in state:
-                if 'problem_dims' not in state:
-                    raise ValueError('variable_mappings, geometric_offset or problem_dims '
+        if state.sublattice_mappings is None:
+            if state.geometric_offset is None:
+                if state.problem_dims is None:
+                    raise ValueError('sublattice_mappings, geometric_offset or problem_dims '
                                      'must be specified as state variables')
                 # Select uniformly at random amongst available geometric offsets
-                geometric_offset = [self.random.randint(dim) for dim in state.problem_dims]
+                geometric_offset = [self.random.randint(dim)
+                                    for dim in state.problem_dims]
                 # Do not offset excluded dimensions
-                if 'exclude_dims' in state:
+                if state.exclude_dims is not None:
                     for dim in state.exclude_dims:
                         if dim < 0 or dim >= len(geometric_offset):
                             raise ValueError('exclude_dimension state variable '
@@ -514,7 +515,7 @@ class SublatticeDecomposer(traits.ProblemDecomposer, traits.SISO, Runnable):
                             f'lattice allowed ranges [0, problem_dimension[idx]), idx={idx}')
                 geometric_offset = state.geometric_offset
             
-            if 'problem_dims' in state:
+            if state.problem_dims is not None:
                 # Periodic wrapping of displaced coordinates
                 def key_transform(initial_coordinates):
                     return tuple([(val + initial_coordinates[idx])%state.problem_dims[idx] for idx, val in enumerate(geometric_offset)])
@@ -522,8 +523,10 @@ class SublatticeDecomposer(traits.ProblemDecomposer, traits.SISO, Runnable):
                 # Simple displacement
                 def key_transform(initial_coordinates):
                     return tuple([(val + initial_coordinates[idx]) for idx, val in enumerate(geometric_offset)])
+            # print('DEBUG - geometric branch',geometric_offset,state.samples.first.energy)
+                
         else:
-            if 'sublattice_index' in state:
+            if state.sublattice_index is not None:
                 if (state.sublattice_index > len(state.sublattice_mappings) or
                     state.sublattice_index < -len(state.sublattice_mappings)):
                     raise ValueError('sublattice_index specified a mapping '
@@ -531,10 +534,10 @@ class SublatticeDecomposer(traits.ProblemDecomposer, traits.SISO, Runnable):
                 sublattice_index = state.sublattice_index
             else:
                 sublattice_index = self.random.randint(
-                    len(state.variable_mappings))
+                    len(state.sublattice_mappings))
             key_transform = state.sublattice_mappings[sublattice_index]
-            
-        if 'origin_embedding_index' not in state:
+            # print('DEBUG sublattice branch', sublattice_index, state.samples.first.energy)
+        if state.origin_embedding_index is None:
             #Select uniformly at random amongst available embeddings:
             origin_embedding_index = self.random.randint(
                 len(state.origin_embeddings))
