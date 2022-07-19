@@ -199,7 +199,8 @@ class LatticeLNLSSampler(dimod.Sampler):
     parameters = None
     runnable = None
     origin_embedding = None
-
+    sublattice_mappings = None
+    
     def __init__(self):
         #Minimum requirements for dimod compatibility are used.
         #Certain parameters might be initialized in principle and
@@ -211,7 +212,8 @@ class LatticeLNLSSampler(dimod.Sampler):
         self.properties = {}
 
 
-    def sample(self, topology, bqm, problem_dims, exclude_dims=None,
+    def sample(self, topology, bqm, topology_target=None,
+               problem_dims=None, exclude_dims=None,
                reject_small_problems=True, qpu_sampler=None,
                init_sample=None, num_reads=1, **kwargs):
         """Solve large subspaces of a lattice structured problem sequentially

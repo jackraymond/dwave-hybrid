@@ -35,6 +35,8 @@ from hybrid.utils import (
     bqm_induced_by, flip_energy_gains, select_random_subgraph,
     chimera_tiles)
 
+from dwave.embedding import verify_embedding #Abundance of caution (DEBUG stage)
+
 __all__ = [
     'IdentityDecomposer', 'ComponentDecomposer', 'EnergyImpactDecomposer', 
     'RandomSubproblemDecomposer', 'TilingChimeraDecomposer', 
@@ -747,7 +749,8 @@ def _all_minimal_covers(edgelist):
             'should only be used for small graphs. The use case for this function '
             'is in finding coverings over unyielded lattice subgraphs, which in '
             'the current online generation of processors are sufficiently small '
-            'so as to allow a brute force method.')
+            'so as to allow a brute force method.'
+            'len(edgelist)={:d}'.format(len(edgelist)))
 
     minimum_coverings = []
     for cover in map(set, product(*edgelist)):
@@ -1087,6 +1090,7 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
     """
     if qpu_sampler is None:
         if lattice_type == 'pegasus' or lattice_type == 'chimera' or lattice_type == 'zephyr':
+            print('This branch QPU')
             qpu_sampler = DWaveSampler(solver={'topology__type': lattice_type})
         else:
             qpu_sampler = DWaveSampler()
@@ -1194,16 +1198,55 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
                                      and target.has_edge(vec_to_lin((2*x+1, 2*y+1, 0, z)),
                                                          vec_to_lin((2*x,2*y+1,0,z)))
                                      })
+        elif qpu_type == 'zephyr':
+            vec_to_lin = dnx.zephyr_coordinates(qpu_shape[0],
+                                                qpu_shape[1]).zephyr_to_linear
+            t = qpu_shape[1]
+            dimensions = [qpu_shape[0], qpu_shape[0], 4*t]
+            # Create 4 sheets mxmxt of 2-qubit dimers,
+            # connections in y,z mediated by external couplers (between tiles),
+            # and connections in z mediated by internal couplers (within tile).
+            # Sheets can be tied together in various ways,
+            # this method ties them in the z direction
+            # producing a m x m x 4t lattice for a Z[m,t] graph:
+
+            
+            # (u, w, k, j, z)
+            def vert_q(x,y,z):
+                return vec_to_lin((0, 2*y+(z//t)%2, z%t, (z//(2*t))%2, x))
+            def horiz_q(x,y,z):
+                return vec_to_lin((1, 2*x+(z//(2*t))%2, z%t, (z//t)%2, y))
+            origin_embedding = {(x,y,z) : (vert_q(x,y,z),
+                                           horiz_q(x,y,z))
+                                for x in range(dimensions[0]) #row of Zephyr
+                                for y in range(dimensions[1]) #col of Zephyr
+                                for z in range(dimensions[2]) #in-tile, + 4 sheets
+                                if target.has_edge(vert_q(x,y,z),
+                                                   horiz_q(x,y,z))
+                                }
+            if len(origin_embedding) != len(set([origin_embedding[key] for key in origin_embedding])):
+                print('duplicated edges')
+                raise ValueError('Duplicated edges')
+            if 2*len(origin_embedding) != len(set(sum([origin_embedding[key] for key in origin_embedding],()))):
+                print(2*len(origin_embedding),len(set(sum([origin_embedding[key] for key in origin_embedding],()))))
+                raise ValueError('Duplicated vars')
+            #Check is valid embedding:
+            proposed_source = _make_cubic_lattice(dimensions)
+            verify_embedding(origin_embedding,proposed_source,target)
+            
         else:
             raise ValueError(f'Unsupported qpu_sampler topology {qpu_type} '
-                             'for cubic lattice solver')
+                             'for cubic lattice solver:'
+                             + lattice_type + ' ' + qpu_type)
 
         proposed_source = _make_cubic_lattice(dimensions)
     else:
         raise ValueError('Unsupported combination of lattice_type '
-                         'and qpu_sampler topology')
+                         'and qpu_sampler topology:'
+                         + lattice_type + ' ' + qpu_type)
 
     if not allow_unyielded_edges:
+        #print(origin_embedding,proposed_source.edges,target.edges)
         origin_embedding = _yield_limited_origin_embedding(origin_embedding,
                                                            proposed_source,
                                                            target)
@@ -1243,7 +1286,11 @@ def make_origin_embeddings(qpu_sampler=None, lattice_type=None,
                                   for key,value in origin_embedding.items()})
         problem_dim_spec = 4
     elif lattice_type == 'zephyr':
-        pass
+        #Flip vertical horizontal:
+        origin_embeddings.append(
+            {(1-key[0], key[1], key[2], key[3], key[4]): value
+             for key,value in origin_embedding.items()})
+        problem_dim_spec = 5
     else:
         raise ValueError('Unsupported lattice_type')
     if problem_dims is not None:

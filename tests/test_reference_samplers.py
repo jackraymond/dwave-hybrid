@@ -45,15 +45,20 @@ class MockDWaveSamplerGeneralization(MockDWaveSampler):
         super().__init__(broken_nodes, **config)
         #An Advantage generation processor, only artificially smaller,
         #replaces C4 in default MockDWaveSampler
-        if topology_type != 'chimera':
+        if topology_type == 'pegasus':
             self.properties['topology'] = {'type': 'pegasus',
                                            'shape': [qpu_scale]}
             qpu_graph = dnx.pegasus_graph(qpu_scale,fabric_only=True)
-        else:
+        elif topology_type == 'zephyr':
+            self.properties['topology'] = {'type': 'pegasus',
+                                           'shape': [qpu_scale,4]}
+            qpu_graph = dnx.zephyr_graph(qpu_scale)
+        elif topology_type == 'chimera' or topology_type==None:
             self.properties['topology'] = {'type': 'chimera',
                                            'shape': [qpu_scale,qpu_scale,4]}
             qpu_graph = dnx.chimera_graph(qpu_scale)
-            
+        else:
+            raise ValueError('No MockSampler for qpu_graph=' + topology_type)
         #Adjust edge_list, 
         if broken_nodes is None:
             self.nodelist = sorted(qpu_graph.nodes)
@@ -74,7 +79,7 @@ class MockDWaveSamplerGeneralization(MockDWaveSampler):
 class TestLatticeLNLS(unittest.TestCase):
     
     def test_basic_workflow_operation(self):
-        for topology_type in ['pegasus','chimera']:
+        for topology_type in ['pegasus','chimera','zephyr']:
             qpu_sampler=MockDWaveSamplerGeneralization(topology_type=topology_type)
             for lattice_type in ['cubic',topology_type]:
                 LatticeLNLS(topology=lattice_type, qpu_sampler=qpu_sampler)
@@ -82,7 +87,7 @@ class TestLatticeLNLS(unittest.TestCase):
     def test_basic_sampler_operation(self):
         bqm = dimod.BinaryQuadraticModel({(i,j,k) : 0 for i in range(2) for j in range(2) for k in range(2)}, {((0,0,0),(0,0,1)): 1, ((1,1,0),(1,1,1)): 1}, 0, dimod.SPIN)
         sampleset = LatticeLNLSSampler().sample(
-            bqm=bqm, problem_dims=(2,2,2), qpu_sampler=MockDWaveSamplerGeneralization(), topology='cubic',max_iter=1,
+            bqm=bqm, problem_dims=(2,2,2), qpu_sampler=MockDWaveSamplerGeneralization(), topology='cubic', max_iter=1,
             qpu_params=dict(chain_strength=2), reject_small_problems=False)
 
 

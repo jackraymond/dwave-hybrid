@@ -686,14 +686,19 @@ class MockDWaveSamplerGeneralization(MockDWaveSampler):
         super().__init__(broken_nodes, **config)
         #An Advantage generation processor, only artificially smaller,
         #replaces C4 in default MockDWaveSampler
-        if topology_type != 'chimera':
-            self.properties['topology'] = {'type': 'pegasus',
-                                           'shape': [qpu_scale]}
-            qpu_graph = dnx.pegasus_graph(qpu_scale,fabric_only=True)
-        else:
+        if topology_type == 'chimera':
             self.properties['topology'] = {'type': 'chimera',
                                            'shape': [qpu_scale,qpu_scale,4]}
             qpu_graph = dnx.chimera_graph(qpu_scale)
+        elif topology_type == 'zephyr':
+
+            self.properties['topology'] = {'type': 'zephyr',
+                                           'shape': [qpu_scale,4]}
+            qpu_graph = dnx.zephyr_graph(qpu_scale)
+        else:
+            self.properties['topology'] = {'type': 'pegasus',
+                                           'shape': [qpu_scale]}
+            qpu_graph = dnx.pegasus_graph(qpu_scale,fabric_only=True)
             
         #Adjust edge_list, 
         if broken_nodes is None:
@@ -739,8 +744,9 @@ class TestMakeOriginEmbeddings(unittest.TestCase):
                 self.assertEqual(len(val), chain_length)
   
     def test_all_embedding_shapes(self):
-        """Check embeddings match anticipated optimal dimensions for Chimera,
-        and Pegasus processors with Cubic and Native embeddings.
+        """Check embeddings match anticipated optimal dimensions for supportd.
+        processors: Zephyr, Chimera and Pegasus
+        with Cubic and Native embeddings.
         Uses a default processor scale of 4, with either 0 or 15
         edge defects.
         """
@@ -749,9 +755,11 @@ class TestMakeOriginEmbeddings(unittest.TestCase):
         shape_dicts = {('pegasus', 'pegasus'): {'tl': 5, 'cl': 1, 'ne': 2},
                        ('pegasus', 'cubic'): {'tl': 3, 'cl': 2, 'ne': 3},
                        ('chimera', 'chimera'): {'tl': 4, 'cl': 1, 'ne': 2},
-                       ('chimera', 'cubic'): {'tl': 3, 'cl': 4, 'ne': 3}}
+                       ('chimera', 'cubic'): {'tl': 3, 'cl': 4, 'ne': 3},
+                       ('zephyr','zephyr'): {'tl':5, 'cl' : 1, 'ne': 2},
+                       ('zephyr', 'cubic'): {'tl': 3, 'cl': 2, 'ne': 3}}
         
-        for qpu_top in ['pegasus', 'chimera']:
+        for qpu_top in ['pegasus', 'chimera', 'zephyr']:
             #Native by default:
             shape_dicts[(qpu_top, None)] = shape_dicts[(qpu_top, qpu_top)] 
             qpu_sampler = MockDWaveSamplerGeneralization(topology_type=qpu_top)
@@ -764,9 +772,10 @@ class TestMakeOriginEmbeddings(unittest.TestCase):
                     qpu_sampler.edgelist.pop()
                 self.assertEqual(qpu_sampler.edgelist,
                                  qpu_sampler.properties['couplers'])
-                for lattice_type in ['cubic', qpu_top, None]:
+                for lattice_type in [qpu_top, 'cubic', None]:
+                    # print(qpu_top,lattice_type)
                     orig_embs = make_origin_embeddings(
-                        qpu_sampler=qpu_sampler,
+                        qpu_sampler = qpu_sampler,
                         lattice_type = lattice_type)
                     shape_dict = shape_dicts[(qpu_top, lattice_type)]
                     tuple_length = shape_dict['tl'] 
@@ -784,7 +793,7 @@ class TestMakeOriginEmbeddings(unittest.TestCase):
         # Full scale is 16, a smaller default is used
         qpu_scale = 5
 
-        for qpu_top in ['pegasus', 'chimera']:
+        for qpu_top in ['pegasus', 'chimera', 'zephyr']:
             for lattice_type in ['cubic', qpu_top]:
                 # proposed_source: a defect free-lattice at sampler
                 # scale (hence inclusive of all keys).
@@ -919,7 +928,6 @@ class TestMakeSublatticeMappings(unittest.TestCase):
         # Check chimera sub (2,2,4) into larger pegasus nice [4] :
         for coordinates in [True,'nice']:
             for target_type in {'pegasus', 'pegasus_torus'}:
-                print(coordinates)
                 maps = make_sublattice_mappings({'type' : 'chimera', 'shape' : [2,2,4]},
                                                 {'type' : target_type, 'shape' : [4]},
                                                 coordinates=coordinates)
