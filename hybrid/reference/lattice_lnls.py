@@ -29,7 +29,9 @@ def LatticeLNLS(topology,
                 max_time=None,
                 convergence=None,
                 qpu_params=None,
-                workflow_type='qpu-only'):
+                workflow_type='qpu-only',
+                log_post_qpu=None,
+                log_post_merge=None):
     '''Implements lattice workflows as described in `Hybrid quantum annealing for
     larger-than-QPU lattice-structured problems <https://arxiv.org/abs/2202.03044>`_.
 
@@ -94,6 +96,22 @@ def LatticeLNLS(topology,
             Terminate when this energy threshold is surpassed. Check is
             performed at the end of each iteration.
 
+        log_post_qpu (Tuple[string,callable], optional):
+            A Tuple of an output file (to which a json is written), and
+            a logging function of the state, ``see hybrid.flow.Log``.
+            The logging function is called following the QPU subsampling
+            stage. Note that, owing to copying of large data structures on
+            Runnables even a simple log function can impact wallclock time
+            appreciably. 
+
+        log_post_merge (Tuple[string,callable], optional):
+            A Tuple of an output file (to which a json is written), and
+            a logging function of the state, ``see hybrid.flow.Log``.
+            The logging function is called following the QPU subsampling
+            stage. Note that, owing to copying of large data structures on
+            Runnables even a simple log function can impact wallclock time
+            appreciably. 
+
     Returns:
         Workflow (:class:`~hybrid.core.Runnable` instance).
 
@@ -116,11 +134,16 @@ def LatticeLNLS(topology,
         qpu_params0['num_reads'] = 25
     if 'annealing_time' not in qpu_params0:
         qpu_params0['annealing_time'] = 100
+    
     qpu_branch = (hybrid.decomposers.SublatticeDecomposer()
                   | hybrid.QPUSubproblemExternalEmbeddingSampler(
                       qpu_sampler=qpu_sampler,
                       sampling_params=qpu_params0,
                       num_reads=qpu_params0['num_reads']))
+    if log_post_qpu is not None:
+        qpu_branch = (qpu_branch |
+                      hybrid.Log(key=log_post_qpu[1], outfile=log_post_qpu[0]))
+        
 
     if workflow_type == 'qpu-only':
         per_it_runnable =  (qpu_branch| hybrid.SplatComposer())
@@ -136,6 +159,9 @@ def LatticeLNLS(topology,
             | hybrid.ArgMin())
     else:
         raise ValueError('Unknown workflow type')
+    if log_post_merge is not None:
+        per_it_runnable = (per_it_runnable
+                           | hybrid.Log(key=log_post_merge[1], outfile=log_post_merge[0]))
     if energy_threshold is not None:
         energy_reached = lambda en: en <= energy_threshold
     else:
