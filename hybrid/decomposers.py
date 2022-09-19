@@ -826,26 +826,30 @@ def _yield_limited_origin_embedding(origin_embedding, proposed_source, target):
     return origin_embedding
 
 
-def _make_cubic_lattice(dimensions, node_list=None, edge_list=None):
+def _make_cubic_lattice(dimensions, *, node_list=None, edge_list=None, periodic=[False,False,False]):
     """Returns an open boundary cubic lattice graph as function of lattice
     dimensions. Helper function for ``make_origin_embeddings``.
+    Periodicity in z is supported in the default embeddings. Periodicity in x,y is not supported.
+    For the hybrid application, support of periodic boundary conditions is typically irrelevant
+    in the subsolver.
     """
+    max_edge_roots = [dimensions[i] - (periodic[i]==False) for i in range(3)]
     cubic_lattice_graph = nx.Graph()
     if edge_list is None:
-        cubic_lattice_graph.add_edges_from([((x, y, z), (x+1, y, z))
-                                            for x in range(dimensions[0]-1)
+        cubic_lattice_graph.add_edges_from([((x, y, z), ( (x+1)%dimensions[0], y, z))
+                                            for x in range(max_edge_roots[0])
                                             for y in range(dimensions[1])
                                             for z in range(dimensions[2])
         ])
-        cubic_lattice_graph.add_edges_from([((x, y, z), (x, y+1, z))
+        cubic_lattice_graph.add_edges_from([((x, y, z), (x, (y+1)%dimensions[1], z))
                                             for x in range(dimensions[0])
-                                            for y in range(dimensions[1]-1)
+                                            for y in range(max_edge_roots[1])
                                             for z in range(dimensions[2])
         ])
-        cubic_lattice_graph.add_edges_from([((x, y, z), (x, y, z+1))
+        cubic_lattice_graph.add_edges_from([((x, y, z), (x, y, (z+1)%dimensions[2]))
                                             for x in range(dimensions[0])
                                             for y in range(dimensions[1])
-                                            for z in range(dimensions[2]-1)
+                                            for z in range(max_edge_roots[2])
         ])
         if node_list is not None:
             cubic_lattice_graph.remove_nodes_from(set(cubic_lattice_graph)-set(node_list))
