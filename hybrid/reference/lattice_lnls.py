@@ -120,11 +120,12 @@ def LatticeLNLS(topology,
         qpu_params0['annealing_time'] = 100
 
     def track_samples(lambda_next, state: hybrid.State):
-        state = state.updated(
-            tracked_subsamples=state.tracked_subsamples + [state.subsamples],
-            tracked_samples=state.tracked_samples + [state.samples],
-            tracked_subproblems=state.tracked_subproblems + [state.subproblem],
-        )
+        updates = dict()
+        for k1, k2 in [('tracked_samples', 'samples'),
+                       ('tracked_subsamples', 'subsamples'),
+                       ('tracked_subproblems', 'subproblem')]:
+            updates[k1] = state.get(k1, []) + [state.get(k2)]
+        state = state.updated(**updates)
         return state
 
     qpu_branch = (hybrid.decomposers.SublatticeDecomposer()
@@ -296,9 +297,6 @@ class LatticeLNLSSampler(dimod.Sampler):
                 problem_dims=problem_dims,
                 exclude_dims=exclude_dims,
                 origin_embeddings=self.origin_embeddings,
-                tracked_subsamples=[],
-                tracked_samples=[],
-                tracked_subproblems=[],
                 )
         elif init_sample is None:
             init_state_gen = lambda: hybrid.State.from_sample(
@@ -307,9 +305,6 @@ class LatticeLNLSSampler(dimod.Sampler):
                 problem_dims=problem_dims,
                 exclude_dims=exclude_dims,
                 origin_embeddings=self.origin_embeddings,
-                tracked_samples=[],
-                tracked_subsamples=[],
-                tracked_subproblems=[],
                 )
         elif isinstance(init_sample, dimod.SampleSet):
             init_state_gen = lambda: hybrid.State.from_sample(
@@ -318,9 +313,6 @@ class LatticeLNLSSampler(dimod.Sampler):
                 problem_dims=problem_dims,
                 exclude_dims=exclude_dims,
                 origin_embeddings=self.origin_embeddings,
-                tracked_samples=[],
-                tracked_subsamples=[],
-                tracked_subproblems=[],
                 )
         else:
             raise TypeError("'init_sample' should be a SampleSet or a SampleSet generator")
