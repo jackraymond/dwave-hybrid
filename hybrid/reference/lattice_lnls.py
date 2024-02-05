@@ -20,13 +20,6 @@ from dwave.system import DWaveSampler
 
 __all__ = ['LatticeLNLS','LatticeLNLSSampler']
 
-def track_samples(lambda_next, state: hybrid.State):
-    state = state.updated(
-        tracked_subsamples=state.tracked_subsamples + [state.subsamples],
-        tracked_samples=state.tracked_samples + [state.samples],
-        tracked_subproblems=state.tracked_subproblems + [state.subproblem],
-    )
-    return state
 
 def LatticeLNLS(topology,
                 exclude_dims=None,
@@ -125,6 +118,15 @@ def LatticeLNLS(topology,
         qpu_params0['num_reads'] = 25
     if 'annealing_time' not in qpu_params0:
         qpu_params0['annealing_time'] = 100
+
+    def track_samples(lambda_next, state: hybrid.State):
+        state = state.updated(
+            tracked_subsamples=state.tracked_subsamples + [state.subsamples],
+            tracked_samples=state.tracked_samples + [state.samples],
+            tracked_subproblems=state.tracked_subproblems + [state.subproblem],
+        )
+        return state
+
     qpu_branch = (hybrid.decomposers.SublatticeDecomposer()
                   | hybrid.QPUSubproblemExternalEmbeddingSampler(
                       qpu_sampler=qpu_sampler,
