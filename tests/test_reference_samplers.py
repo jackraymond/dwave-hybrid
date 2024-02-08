@@ -27,7 +27,8 @@ from hybrid.reference.pa import (
     EnergyWeightedResampler, ProgressBetaAlongSchedule,
     CalculateAnnealingBetaSchedule, PopulationAnnealing
 )
-
+import os  # For testing logging
+import json
 
 class MockDWaveSamplerGeneralization(MockDWaveSampler):
     """Extend the `dwave.system.testing.MockDWaveSampler` to Pegasus topology.
@@ -85,6 +86,27 @@ class TestLatticeLNLS(unittest.TestCase):
             bqm=bqm, problem_dims=(2,2,2), qpu_sampler=MockDWaveSamplerGeneralization(), topology='cubic',max_iter=1,
             qpu_params=dict(chain_strength=2), reject_small_problems=False)
 
+    def test_logging(self):
+        bqm = dimod.BinaryQuadraticModel({(i,j,k) : 0 for i in range(2) for j in range(2) for k in range(2)}, {((0,0,0),(0,0,1)): 1, ((1,1,0),(1,1,1)): 1}, 0, dimod.SPIN)
+        outfile_name = 'test_logging.log'
+        if os.path.isfile(outfile_name):
+            os.remove(outfile_name)
+        with open(outfile_name,"w") as outfile:
+            sampleset = LatticeLNLSSampler().sample(
+                bqm=bqm, problem_dims=(2,2,2), qpu_sampler=MockDWaveSamplerGeneralization(), topology='cubic',max_iter=1, Log=outfile,
+                qpu_params=dict(chain_strength=2), reject_small_problems=False)
+        self.assertTrue(os.path.isfile(outfile_name))
+        os.remove(outfile_name)
+        with open(outfile_name,"w") as outfile:
+            state_metrics = (lambda state: 
+                             {'energy': state.samples.first.energy})
+            
+            # state_metrics = lambda state: {'sample': str(state.samples.first.sample)}
+            Log = hybrid.Log(key=state_metrics, outfile=outfile)
+            sampleset = LatticeLNLSSampler().sample(
+                bqm=bqm, problem_dims=(2,2,2), qpu_sampler=MockDWaveSamplerGeneralization(), topology='cubic',max_iter=1, Log=Log,
+                qpu_params=dict(chain_strength=2), reject_small_problems=False)
+        self.assertTrue(os.path.isfile(outfile_name))
 
 class TestKerberos(unittest.TestCase):
 

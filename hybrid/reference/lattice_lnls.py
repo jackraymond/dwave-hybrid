@@ -17,6 +17,7 @@
 import hybrid
 import dimod
 from dwave.system import DWaveSampler
+import json # serialize state, default logging.
 
 __all__ = ['LatticeLNLS','LatticeLNLSSampler']
 
@@ -29,7 +30,8 @@ def LatticeLNLS(topology,
                 max_time=None,
                 convergence=None,
                 qpu_params=None,
-                workflow_type='qpu-only'):
+                workflow_type='qpu-only',
+                Log=None):
     '''Implements lattice workflows as described in `Hybrid quantum annealing for
     larger-than-QPU lattice-structured problems <https://arxiv.org/abs/2202.03044>`_.
 
@@ -96,6 +98,11 @@ def LatticeLNLS(topology,
             Terminate when this energy threshold is surpassed. Check is
             performed at the end of each iteration.
 
+        Log (Union[hybrid.Runnable, writeable file], optional):
+            A hybrid.Log runnable that is executed at the end of each cycle.
+            If a file is provided, a default Runnable is created with and
+            written to the file. 
+
     Returns:
         Workflow (:class:`~hybrid.core.Runnable` instance).
 
@@ -143,7 +150,18 @@ def LatticeLNLS(topology,
     else:
         energy_reached = None
     #Iterate to a termination criteria, integrate proposal if energy lowered:
-    workflow = hybrid.Loop(per_it_runnable | hybrid.TrackMin(output=True),
+    per_it_runnable = per_it_runnable | hybrid.TrackMin(output=True)
+
+    if Log is not None:
+        if hasattr(Log,'write'):  # File to write to, use default settings
+            # Create default Log, writing to Log provided
+            state_metrics = lambda state: {'sample': str(state.samples.first.sample)
+            Log = hybrid.Log(key=state_metrics, outfile=Log)
+        else:
+            # Assume Runnable
+            pass
+        per_it_runnable = per_it_runnable | Log
+    workflow = hybrid.Loop(per_it_runnable,
                            max_iter=max_iter, terminate=energy_reached,
                            convergence=convergence, max_time=max_time)
     return workflow
